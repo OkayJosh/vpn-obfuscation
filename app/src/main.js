@@ -19,6 +19,8 @@ const el = {
   chkIncludeHttp: document.getElementById("chkIncludeHttp"),
   statVpn: document.getElementById("statVpn"),
   statVpnHint: document.getElementById("statVpnHint"),
+  statGnome: document.getElementById("statGnome"),
+  statGnomeHint: document.getElementById("statGnomeHint"),
   statDirectIp: document.getElementById("statDirectIp"),
   statTorIp: document.getElementById("statTorIp"),
   statTorHint: document.getElementById("statTorHint"),
@@ -40,6 +42,7 @@ let currentStatus = null;
 let busy = false;
 let activeTab = "bridges";
 let bridgesLoaded = false;
+let lastGnomeVerify = null;
 
 function showFeedback(message, type = "info") {
   el.feedbackBanner.textContent = message;
@@ -121,11 +124,22 @@ function renderStatus(status) {
 
   if (!status.gnome_proxy.available) {
     el.gnomeProxyDesc.textContent = "gsettings not available on this desktop";
+    el.statGnome.textContent = "Unavailable";
+    el.statGnome.className = "stat-value warn";
+    el.statGnomeHint.textContent = "gsettings not found";
   } else if (status.gnome_proxy.enabled_for_tor) {
     const extra = status.gnome_proxy.includes_http ? " + HTTP/HTTPS :8118" : "";
     el.gnomeProxyDesc.textContent = `ON — SOCKS5 127.0.0.1:9050${extra} (Chrome is routed through Tor)`;
+    if (!lastGnomeVerify) {
+      el.statGnome.textContent = "ON (Tor SOCKS5)";
+      el.statGnome.className = "stat-value ok";
+      el.statGnomeHint.textContent = `127.0.0.1:9050${extra} — click Verify to confirm via GNOME`;
+    }
   } else {
     el.gnomeProxyDesc.textContent = `OFF (mode: ${status.gnome_proxy.mode}) — toggle ON to route Chrome through Tor`;
+    el.statGnome.textContent = `OFF (${status.gnome_proxy.mode})`;
+    el.statGnome.className = "stat-value warn";
+    el.statGnomeHint.textContent = "Chrome using direct/VPN routing";
   }
 }
 
@@ -184,6 +198,7 @@ el.btnToggleTor.addEventListener("click", async () => {
 
 async function applyGnomeProxy() {
   clearFeedback();
+  lastGnomeVerify = null;
   const enabled = el.chkGnomeProxy.checked;
   const includeHttp = el.chkIncludeHttp.checked;
 
@@ -223,18 +238,61 @@ el.btnVerify.addEventListener("click", async () => {
   try {
     const res = await invoke("verify_connection");
     el.statDirectIp.textContent = res.direct_ip || "unreachable";
+
+    // Update Tor Exit IP card
     if (res.is_tor && res.tor_ip) {
       el.statTorIp.textContent = res.tor_ip;
       el.statTorIp.className = "stat-value mono ok";
       el.statTorHint.textContent = "Verified: IsTor = true";
-      showFeedback(
-        `Verified! Direct/VPN IP: ${res.direct_ip} → Tor Exit IP: ${res.tor_ip}`,
-        "success"
-      );
     } else {
       el.statTorIp.textContent = "Not connected";
       el.statTorIp.className = "stat-value warn";
       el.statTorHint.textContent = res.error || "IsTor = false";
+    }
+
+    // Update GNOME Proxy card with real GNOME/GIO verification
+    lastGnomeVerify = res;
+    if (res.gnome_proxy_enabled) {
+      if (res.gnome_is_tor && res.gnome_ip) {
+        const httpNote =
+          res.http_tunnel_ok === true
+            ? " • HTTP :8118 OK"
+            : res.http_tunnel_ok === false
+              ? " • HTTP :8118 FAILED"
+              : "";
+        el.statGnome.textContent = "Verified via GNOME";
+        el.statGnome.className = "stat-value ok";
+        el.statGnomeHint.textContent = `GNOME exit IP: ${res.gnome_ip}${httpNote}`;
+      } else {
+        el.statGnome.textContent = "GNOME Check Failed";
+        el.statGnome.className = "stat-value warn";
+        el.statGnomeHint.textContent =
+          res.gnome_error || `GNOME exited directly (${res.gnome_ip || "unknown"})`;
+      }
+    } else {
+      el.statGnome.textContent = "OFF (Direct/VPN)";
+      el.statGnome.className = "stat-value warn";
+      el.statGnomeHint.textContent = res.gnome_ip
+        ? `GNOME apps exiting via ${res.gnome_ip}`
+        : "Toggle GNOME System Proxy ON to route Chrome";
+    }
+
+    if (res.is_tor && res.gnome_proxy_enabled && res.gnome_is_tor) {
+      showFeedback(
+        `All checks passed! Direct/VPN: ${res.direct_ip} → Tor: ${res.tor_ip} • GNOME verified: ${res.gnome_ip}`,
+        "success"
+      );
+    } else if (res.is_tor && !res.gnome_proxy_enabled) {
+      showFeedback(
+        `Tor is working (${res.tor_ip}), but GNOME System Proxy is OFF. Toggle it ON to route Chrome through Tor.`,
+        "info"
+      );
+    } else if (res.is_tor && res.gnome_proxy_enabled && !res.gnome_is_tor) {
+      showFeedback(
+        `Tor works (${res.tor_ip}), but GNOME check failed: ${res.gnome_error || "GNOME did not exit via Tor"}`,
+        "error"
+      );
+    } else {
       showFeedback(res.error || "Traffic is not exiting through Tor.", "error");
     }
   } catch (err) {

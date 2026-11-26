@@ -28,7 +28,7 @@ obfs4 Bridge ──► Tor Network ──► Destination
 - **Tauri v2 Desktop App** (`app/`):
   - One-click **Start / Stop Tor** with live bootstrap progress (`0% → 100%`)
   - **GNOME System Proxy** toggle (`gsettings`) to route Chrome and GNOME apps via `SOCKS5 127.0.0.1:9050` (and optional `HTTP/HTTPS 127.0.0.1:8118`), with automatic proxy disable when stopping Tor so you never get stranded offline
-  - Built-in **IP & Leak Verification** comparing your direct/VPN IP vs. Tor exit IP
+  - Built-in **IP & GNOME Leak Verification** comparing your direct/VPN IP, Tor SOCKS5 exit IP, and a live **native GNOME (`gio`)** request to confirm GNOME apps & Chrome actually exit through Tor
   - Live **WireGuard interface** status monitor
   - Built-in **`bridges.txt` editor** with **Save & Restart Tor**
   - **Live Tor Logs** viewer and one-click **Isolated Chromium** launcher

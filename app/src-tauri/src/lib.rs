@@ -39,6 +39,11 @@ pub struct VerifyResult {
     pub tor_ip: Option<String>,
     pub is_tor: bool,
     pub error: Option<String>,
+    pub gnome_proxy_enabled: bool,
+    pub gnome_ip: Option<String>,
+    pub gnome_is_tor: bool,
+    pub gnome_error: Option<String>,
+    pub http_tunnel_ok: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -426,8 +431,16 @@ async fn set_gnome_proxy(enabled: bool, include_http: bool) -> Result<GnomeProxy
     Ok(read_gnome_proxy_status().await)
 }
 
+fn parse_tor_check_json(body: &str) -> Result<(bool, String), String> {
+    serde_json::from_str::<TorCheckApi>(body.trim())
+        .map(|p| (p.is_tor, p.ip))
+        .map_err(|e| format!("Unexpected Tor check response: {e}"))
+}
+
 #[tauri::command]
 async fn verify_connection() -> Result<VerifyResult, String> {
+    let gnome_proxy = read_gnome_proxy_status().await;
+
     let direct_fut = Command::new("curl")
         .args(["-s", "--noproxy", "*", "--max-time", "8", "https://api.ipify.org"])
         .output();
@@ -443,7 +456,54 @@ async fn verify_connection() -> Result<VerifyResult, String> {
         ])
         .output();
 
-    let (direct_res, tor_res) = tokio::join!(direct_fut, tor_fut);
+    // Native GNOME/GLib check: `gio cat` reads org.gnome.system.proxy directly without CLI proxy flags
+    let gnome_fut = async {
+        if !cmd_exists("gio").await {
+            return Err("gio not installed".to_string());
+        }
+        let out = Command::new("timeout")
+            .args(["15", "gio", "cat", "https://check.torproject.org/api/ip"])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to run gio: {e}"))?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(if err.is_empty() {
+                "GNOME gio request timed out or failed".to_string()
+            } else {
+                err
+            });
+        }
+        let body = String::from_utf8_lossy(&out.stdout).to_string();
+        parse_tor_check_json(&body)
+    };
+
+    // Optional HTTP CONNECT tunnel check when GNOME HTTP/HTTPS proxy (:8118) is enabled
+    let http_fut = async {
+        if !gnome_proxy.includes_http {
+            return None;
+        }
+        let out = Command::new("curl")
+            .args([
+                "-s",
+                "--max-time",
+                "15",
+                "--proxy",
+                "http://127.0.0.1:8118",
+                "https://check.torproject.org/api/ip",
+            ])
+            .output()
+            .await
+            .ok()?;
+        if !out.status.success() {
+            return Some(false);
+        }
+        let body = String::from_utf8_lossy(&out.stdout);
+        Some(parse_tor_check_json(&body).map(|(is_tor, _)| is_tor).unwrap_or(false))
+    };
+
+    let (direct_res, tor_res, gnome_res, http_tunnel_ok) =
+        tokio::join!(direct_fut, tor_fut, gnome_fut, http_fut);
 
     let direct_ip = direct_res
         .ok()
@@ -452,44 +512,45 @@ async fn verify_connection() -> Result<VerifyResult, String> {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "unreachable".to_string());
 
-    match tor_res {
+    let (tor_ip, is_tor, error) = match tor_res {
         Ok(out) if out.status.success() => {
-            let body = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            match serde_json::from_str::<TorCheckApi>(&body) {
-                Ok(parsed) => Ok(VerifyResult {
-                    direct_ip,
-                    tor_ip: Some(parsed.ip),
-                    is_tor: parsed.is_tor,
-                    error: None,
-                }),
-                Err(e) => Ok(VerifyResult {
-                    direct_ip,
-                    tor_ip: None,
-                    is_tor: false,
-                    error: Some(format!("Unexpected Tor check response: {e}")),
-                }),
+            let body = String::from_utf8_lossy(&out.stdout);
+            match parse_tor_check_json(&body) {
+                Ok((is_tor, ip)) => (Some(ip), is_tor, None),
+                Err(e) => (None, false, Some(e)),
             }
         }
         Ok(out) => {
             let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            Ok(VerifyResult {
-                direct_ip,
-                tor_ip: None,
-                is_tor: false,
-                error: Some(if err_msg.is_empty() {
+            (
+                None,
+                false,
+                Some(if err_msg.is_empty() {
                     "Could not reach Tor SOCKS5 at 127.0.0.1:9050".to_string()
                 } else {
                     err_msg
                 }),
-            })
+            )
         }
-        Err(e) => Ok(VerifyResult {
-            direct_ip,
-            tor_ip: None,
-            is_tor: false,
-            error: Some(format!("Failed to run curl: {e}")),
-        }),
-    }
+        Err(e) => (None, false, Some(format!("Failed to run curl: {e}"))),
+    };
+
+    let (gnome_ip, gnome_is_tor, gnome_error) = match gnome_res {
+        Ok((g_tor, g_ip)) => (Some(g_ip), g_tor, None),
+        Err(e) => (None, false, Some(e)),
+    };
+
+    Ok(VerifyResult {
+        direct_ip,
+        tor_ip,
+        is_tor,
+        error,
+        gnome_proxy_enabled: gnome_proxy.enabled_for_tor,
+        gnome_ip,
+        gnome_is_tor,
+        gnome_error,
+        http_tunnel_ok,
+    })
 }
 
 #[tauri::command]
@@ -600,5 +661,14 @@ Bridge obfs4 203.0.113.20:9001 BBBB cert=zzz iat-mode=0
     fn strips_gsettings_single_quotes() {
         assert_eq!(strip_gsettings_quotes("'manual'\n"), "manual");
         assert_eq!(strip_gsettings_quotes("9050\n"), "9050");
+    }
+
+    #[test]
+    fn parses_tor_check_api_json() {
+        let ok = parse_tor_check_json(r#"{"IsTor":true,"IP":"204.8.96.182"}"#).unwrap();
+        assert_eq!(ok, (true, "204.8.96.182".to_string()));
+        let direct = parse_tor_check_json(r#"{"IsTor":false,"IP":"198.51.100.5"}"#).unwrap();
+        assert_eq!(direct, (false, "198.51.100.5".to_string()));
+        assert!(parse_tor_check_json("not json").is_err());
     }
 }
