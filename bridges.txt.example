@@ -1,0 +1,11 @@
+# Copy this file to bridges.txt and paste 2-3 fresh obfs4 bridge lines below.
+#
+# How to get fresh obfs4 bridges:
+#   1. Web:      https://bridges.torproject.org/bridges?transport=obfs4
+#   2. Email:    Send an email to bridges@torproject.org (from Gmail/Riseup)
+#                with the body: get transport obfs4
+#   3. Telegram: Message @GetBridgesBot and send: /bridges
+#
+# Lines can either start with "Bridge obfs4 ..." or just "obfs4 ...".
+# Example format (replace with real bridges):
+# obfs4 192.0.2.1:443 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA cert=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx iat-mode=0

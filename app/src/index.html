@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>VPN Obfuscator — Tor + obfs4 &amp; GNOME Proxy</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <div class="shield-badge" id="shieldBadge" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <circle cx="12" cy="11" r="3" />
+            </svg>
+          </div>
+          <div>
+            <h1>VPN Obfuscator</h1>
+            <p class="subtitle">Tor + obfs4 over WireGuard &amp; GNOME System Proxy</p>
+          </div>
+        </div>
+        <span class="status-pill" id="overallStatus" role="status" aria-live="polite">Checking…</span>
+      </header>
+
+      <main class="main-content">
+        <!-- Master Controls -->
+        <section class="card control-card" aria-labelledby="tunnel-heading">
+          <div class="card-row">
+            <div>
+              <h2 id="tunnel-heading">Tor + obfs4 Tunnel</h2>
+              <p class="muted" id="torDetailLine">Checking local Tor daemon…</p>
+            </div>
+            <div class="button-group">
+              <button type="button" class="btn btn-primary" id="btnToggleTor">Start Tor</button>
+            </div>
+          </div>
+
+          <div class="progress-wrap" id="progressWrap">
+            <div class="progress-meta">
+              <span id="bootstrapLabel">Bootstrap progress</span>
+              <span id="bootstrapPct">0%</span>
+            </div>
+            <progress id="bootstrapProgress" max="100" value="0">0%</progress>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="toggles-list">
+            <label class="toggle-row" for="chkUseBridges">
+              <div class="toggle-text">
+                <span class="toggle-title">Use <code>obfs4</code> bridges</span>
+                <span class="toggle-desc" id="bridgeCountDesc">Hides Tor traffic from your upstream VPN</span>
+              </div>
+              <input id="chkUseBridges" type="checkbox" switch checked />
+            </label>
+
+            <label class="toggle-row" for="chkGnomeProxy">
+              <div class="toggle-text">
+                <span class="toggle-title">GNOME System Proxy (Chrome &amp; System Apps)</span>
+                <span class="toggle-desc" id="gnomeProxyDesc">Routes Chrome via SOCKS5 127.0.0.1:9050</span>
+              </div>
+              <input id="chkGnomeProxy" type="checkbox" switch />
+            </label>
+
+            <label class="toggle-row toggle-sub" for="chkIncludeHttp">
+              <div class="toggle-text">
+                <span class="toggle-title">Also set HTTP/HTTPS proxy (127.0.0.1:8118)</span>
+                <span class="toggle-desc">For GNOME/CLI apps that don't support SOCKS5</span>
+              </div>
+              <input id="chkIncludeHttp" type="checkbox" switch />
+            </label>
+          </div>
+        </section>
+
+        <!-- Network Status Grid -->
+        <section class="status-grid" aria-label="Network Status">
+          <article class="card stat-card">
+            <span class="stat-label">WireGuard VPN</span>
+            <strong class="stat-value" id="statVpn">—</strong>
+            <span class="stat-hint" id="statVpnHint">Checking interface…</span>
+          </article>
+
+          <article class="card stat-card">
+            <span class="stat-label">Direct / VPN IP</span>
+            <strong class="stat-value mono" id="statDirectIp">—</strong>
+            <span class="stat-hint">What sites see without Tor</span>
+          </article>
+
+          <article class="card stat-card">
+            <span class="stat-label">Tor Exit IP</span>
+            <strong class="stat-value mono" id="statTorIp">—</strong>
+            <span class="stat-hint" id="statTorHint">Click Verify to test</span>
+          </article>
+        </section>
+
+        <!-- Quick Actions -->
+        <section class="actions-bar" aria-label="Quick Actions">
+          <button type="button" class="btn btn-secondary" id="btnVerify">
+            Verify IP &amp; Leak Check
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnChromium">
+            Launch Isolated Chromium
+          </button>
+          <button type="button" class="btn btn-ghost" id="btnRefresh">
+            Refresh Status
+          </button>
+        </section>
+
+        <!-- Toast / Feedback -->
+        <div class="feedback-banner" id="feedbackBanner" role="status" aria-live="polite" hidden></div>
+
+        <!-- Tabs: Bridges & Live Logs -->
+        <section class="card tabs-card" aria-label="Configuration and Logs">
+          <div class="tab-bar" role="tablist">
+            <button type="button" class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-bridges" id="tab-bridges">
+              obfs4 Bridges
+            </button>
+            <button type="button" class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-logs" id="tab-logs">
+              Live Tor Logs
+            </button>
+          </div>
+
+          <div class="tab-panel" id="panel-bridges" role="tabpanel" aria-labelledby="tab-bridges">
+            <p class="muted small">
+              Paste <code>obfs4</code> bridge lines below (lines starting with <code>#</code> are ignored).
+              Get fresh bridges at <code>https://bridges.torproject.org/bridges?transport=obfs4</code> or Telegram <code>@GetBridgesBot</code>.
+            </p>
+            <textarea
+              id="bridgesTextarea"
+              class="bridges-input mono"
+              rows="5"
+              spellcheck="false"
+              placeholder="obfs4 IP:PORT FINGERPRINT cert=... iat-mode=0"
+              aria-label="obfs4 bridge lines"
+            ></textarea>
+            <div class="panel-actions">
+              <button type="button" class="btn btn-secondary" id="btnSaveBridges">Save Bridges</button>
+              <button type="button" class="btn btn-primary" id="btnSaveRestart">Save &amp; Restart Tor</button>
+            </div>
+          </div>
+
+          <div class="tab-panel" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
+            <pre class="log-viewer mono" id="torLogsOutput">Loading logs…</pre>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

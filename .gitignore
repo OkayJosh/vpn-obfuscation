@@ -1,0 +1,19 @@
+# Private Tor runtime state, logs, and bridge credentials (NEVER commit)
+.tor-data/
+.runtime/
+bridges.txt
+
+# Node / Vite / Tauri build artifacts
+app/node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/gen/
+
+# OS & editor clutter
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.log
+.env
+.env.*

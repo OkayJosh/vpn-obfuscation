@@ -1,0 +1,18 @@
+# Tor + obfs4 client configuration (template)
+# Generated at runtime by scripts/start-tor.sh into .runtime/torrc
+
+DataDirectory __DATA_DIR__
+SafeLogging 1
+
+# SOCKS5 proxy with stream isolation (prevents cross-site/app circuit correlation)
+SocksPort 127.0.0.1:9050 IsolateClientAddr IsolateClientProtocol IsolateDestAddr IsolateDestPort
+
+# Built-in HTTP CONNECT tunnel (for apps that only support HTTP_PROXY / HTTPS_PROXY)
+HTTPTunnelPort 127.0.0.1:8118
+
+# Local DNS resolver over Tor (optional)
+DNSPort 127.0.0.1:5353
+
+# Pluggable transport (obfs4) disguises Tor traffic as randomized noise
+# so the upstream VPN or local network cannot fingerprint Tor handshakes
+__BRIDGE_CONFIG__
