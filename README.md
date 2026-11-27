@@ -73,6 +73,10 @@ npm run tauri build -- --no-bundle
 cd ..
 ./scripts/launch-gui.sh
 ```
+To add **VPN Obfuscator** with its icon to Fedora/GNOME's **Show Apps** launcher:
+```bash
+./scripts/install-desktop-entry.sh
+```
 Or run in development mode:
 ```bash
 cd app && npm run tauri dev
